@@ -59,22 +59,17 @@ func NewServer(config *Config, logEnabled bool) *RESTServer {
 // itself can be stopped with the `detach` API. Run blocks until the HTTP
 // server stops.
 func (s *RESTServer) Run() error {
+	var err error
 	// Create and start the debugger
-	s.debugger = debugger.New(&debugger.Config{
+	if s.debugger, err = debugger.New(&debugger.Config{
 		ProcessArgs: s.config.ProcessArgs,
 		AttachPid:   s.config.AttachPid,
-	})
-	go func() {
-		err := s.debugger.Run()
-		if err != nil {
-			log.Printf("debugger stopped with error: %s", err)
-		}
-		s.debuggerStopped <- err
-	}()
+	}); err != nil {
+		return err
+	}
 
 	// Set up the HTTP server
 	container := restful.NewContainer()
-
 	ws := new(restful.WebService)
 	ws.
 		Path("").
@@ -108,11 +103,7 @@ func (s *RESTServer) Run() error {
 
 // Stop detaches from the debugger and waits for it to stop.
 func (s *RESTServer) Stop(kill bool) error {
-	err := s.debugger.Detach(kill)
-	if err != nil {
-		return err
-	}
-	return <-s.debuggerStopped
+	return s.debugger.Detach(kill)
 }
 
 // writeError writes a simple error response.
