@@ -311,6 +311,13 @@ func execute(attachPid int, processArgs []string, conf *config.Config) int {
 	}
 	defer listener.Close()
 
+	if InitFile == "" {
+		_, err := os.Stat("delverc")
+		if err == nil {
+			InitFile = "delverc"
+		}
+	}
+
 	if WatchInit && (InitFile == "") {
 		fmt.Fprintf(os.Stderr, "--watch-init without init file")
 		os.Exit(1)
