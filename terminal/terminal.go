@@ -26,6 +26,7 @@ type Term struct {
 	client   service.Client
 	prompt   string
 	line     *liner.State
+	conf     *config.Config
 	cmds     *Commands
 	dumb     bool
 	InitFile string
@@ -95,8 +96,9 @@ func (t *Term) Run() (int, error) {
 	f.Close()
 	fmt.Println("Type 'help' for list of commands.")
 
+	t.cmds.InitFile = t.InitFile
 	if t.InitFile != "" {
-		err := t.cmds.executeFile(t, t.InitFile)
+		err := t.cmds.executeFile(t, t.InitFile, true)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error executing init file: %s\n", err)
 		}

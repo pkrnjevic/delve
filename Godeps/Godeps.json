@@ -93,6 +93,11 @@
 		{
 			"ImportPath": "rsc.io/x86/x86asm",
 			"Rev": "01d8f0379593fd888e08a4c4057d69f5765ab2e4"
+		},
+		{
+			"ImportPath": "gopkg.in/fsnotify.v1",
+			"Comment": "v1.2.0",
+			"Rev": "96c060f6a6b7e0d6f75fddd10efeaca3e5d1bcb0"
 		}
 	]
 }
