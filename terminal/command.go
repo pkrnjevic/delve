@@ -19,6 +19,8 @@ import (
 	"github.com/derekparker/delve/service"
 	"github.com/derekparker/delve/service/api"
 	"github.com/derekparker/delve/service/debugger"
+
+	"gopkg.in/fsnotify.v1"
 )
 
 type cmdfunc func(t *Term, args string) error
@@ -44,9 +46,11 @@ func (c command) match(cmdstr string) bool {
 }
 
 type Commands struct {
-	cmds    []command
-	lastCmd cmdfunc
-	client  service.Client
+	cmds      []command
+	lastCmd   cmdfunc
+	client    service.Client
+	InitFile  string
+	WatchInit bool
 }
 
 // Returns a Commands struct with default commands defined.
@@ -58,7 +62,7 @@ func DebugCommands(client service.Client) *Commands {
 		{aliases: []string{"break", "b"}, cmdFn: breakpoint, helpMsg: "break <linespec> [-stack <n>|-goroutine|<variable name>]*"},
 		{aliases: []string{"trace", "t"}, cmdFn: tracepoint, helpMsg: "Set tracepoint, takes the same arguments as break."},
 		{aliases: []string{"restart", "r"}, cmdFn: restart, helpMsg: "Restart process."},
-		{aliases: []string{"continue", "c"}, cmdFn: cont, helpMsg: "Run until breakpoint or program termination."},
+		{aliases: []string{"continue", "c"}, cmdFn: c.cont, helpMsg: "Run until breakpoint or program termination."},
 		{aliases: []string{"step", "si"}, cmdFn: step, helpMsg: "Single step through program."},
 		{aliases: []string{"next", "n"}, cmdFn: next, helpMsg: "Step over to next source line."},
 		{aliases: []string{"threads"}, cmdFn: threads, helpMsg: "Print out info for every traced thread."},
@@ -454,15 +458,66 @@ func restart(t *Term, args string) error {
 	return nil
 }
 
-func cont(t *Term, args string) error {
-	stateChan := t.client.Continue()
-	for state := range stateChan {
-		if state.Err != nil {
-			return state.Err
+func (cmds *Commands) cont(t *Term, args string) error {
+	var w *fsnotify.Watcher = nil
+	var evchan <-chan fsnotify.Event = nil
+	var errchan <-chan error = nil
+	var err error
+
+	if cmds.InitFile != "" && cmds.WatchInit {
+		w, err = watchInitFile(cmds.InitFile)
+		if err != nil {
+			fmt.Printf("Could not watch breakpoints file: %v\n", err)
+		} else {
+			defer w.Close()
+			evchan = w.Events
+			errchan = w.Errors
 		}
-		printcontext(t, state)
 	}
+	repeat := true
+	for repeat {
+		if cmds.InitFile != "" && cmds.WatchInit {
+			err = cmds.executeFile(t, cmds.InitFile, false)
+			if err != nil {
+				fmt.Printf("Error reading init file: %v\n", err)
+			}
+		}
+		repeat, err = contOnce(t, evchan, errchan)
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
+}
+
+func contOnce(t *Term, evchan <-chan fsnotify.Event, errchan <-chan error) (repeat bool, err error) {
+	repeat = false
+	halted := false
+	stateChan := t.client.Continue()
+	for {
+		select {
+		case state, ok := <-stateChan:
+			if !ok {
+				// breakpoint or end of program reached
+				return repeat, nil
+			}
+			if state.Err != nil {
+				return false, state.Err
+			}
+			if state.BreakpointInfo != nil || !halted {
+				printcontext(t, state)
+			}
+		case err := <-errchan:
+			fmt.Printf("Error watching breakpoints file: %v\n", err)
+		case ev := <-evchan:
+			if ev.Op&fsnotify.Write != 0 && !halted {
+				t.client.Halt()
+				halted = true
+				repeat = true
+			}
+		}
+	}
 }
 
 func step(t *Term, args string) error {
@@ -602,16 +657,17 @@ func setBreakpoint(t *Term, tracepoint bool, argstr string) error {
 	if tracepoint {
 		thing = "Tracepoint"
 	}
-	for _, loc := range locs {
-		requestedBp.Addr = loc.PC
 
+	for _, loc := range locs {
+		var err error
+		requestedBp.Addr = loc.PC
 		bp, err := t.client.CreateBreakpoint(requestedBp)
 		if err != nil {
 			return err
 		}
-
 		fmt.Printf("%s %d set at %#v for %s %s:%d\n", thing, bp.ID, bp.Addr, bp.FunctionName, shortenFilePath(bp.File), bp.Line)
 	}
+
 	return nil
 }
 
@@ -807,7 +863,7 @@ func (cmds *Commands) sourceCommand(t *Term, args string) error {
 		return fmt.Errorf("wrong number of arguments: source <filename>")
 	}
 
-	return cmds.executeFile(t, args)
+	return cmds.executeFile(t, args, true)
 }
 
 func digits(n int) int {
@@ -889,11 +945,13 @@ func printcontext(t *Term, state *api.DebuggerState) error {
 			writeGoroutineLong(os.Stdout, bpi.Goroutine, "\t")
 		}
 
-		ss := make([]string, len(bpi.Variables))
-		for i, v := range bpi.Variables {
-			ss[i] = fmt.Sprintf("%s: %v", v.Name, v.MultilineString(""))
+		if len(bpi.Variables) > 0 {
+			ss := make([]string, len(bpi.Variables))
+			for i, v := range bpi.Variables {
+				ss[i] = fmt.Sprintf("%s: %s", v.Name, v.MultilineString(""))
+			}
+			fmt.Printf("\t%s\n", strings.Join(ss, ", "))
 		}
-		fmt.Printf("\t%s\n", strings.Join(ss, ", "))
 
 		if bpi.Stacktrace != nil {
 			fmt.Printf("\tStack:\n")
@@ -960,7 +1018,46 @@ func shortenFilePath(fullPath string) string {
 	return strings.Replace(fullPath, workingDir, ".", 1)
 }
 
-func (cmds *Commands) executeFile(t *Term, name string) error {
+func cmdDisabled(c *Term, args string) error {
+	return fmt.Errorf("command is disabled")
+}
+
+func (c *Commands) disableCommand(cmdstr string) cmdfunc {
+	for i := range c.cmds {
+		if c.cmds[i].match(cmdstr) {
+			fn := c.cmds[i].cmdFn
+			c.cmds[i].cmdFn = cmdDisabled
+			return fn
+		}
+	}
+	return nil
+}
+
+func (c *Commands) enableCommand(cmdstr string, cmdFn cmdfunc) {
+	if cmdFn == nil {
+		return
+	}
+
+	for i := range c.cmds {
+		if c.cmds[i].match(cmdstr) {
+			c.cmds[i].cmdFn = cmdFn
+			return
+		}
+	}
+}
+
+func (cmds *Commands) executeFile(t *Term, name string, canContinue bool) error {
+	if !canContinue {
+		contcmd := cmds.disableCommand("continue")
+		nextcmd := cmds.disableCommand("next")
+		stepcmd := cmds.disableCommand("step")
+		defer func() {
+			cmds.enableCommand("continue", contcmd)
+			cmds.enableCommand("next", nextcmd)
+			cmds.enableCommand("step", stepcmd)
+		}()
+	}
+
 	fh, err := os.Open(name)
 	if err != nil {
 		return err
@@ -987,4 +1084,19 @@ func (cmds *Commands) executeFile(t *Term, name string) error {
 	}
 
 	return scanner.Err()
+}
+
+func watchInitFile(name string) (*fsnotify.Watcher, error) {
+	w, err := fsnotify.NewWatcher()
+	if err != nil {
+		return nil, err
+	}
+
+	err = w.Add(name)
+	if err != nil {
+		w.Close()
+		return nil, err
+	}
+
+	return w, nil
 }

@@ -21,12 +21,13 @@ const (
 )
 
 type Term struct {
-	client   service.Client
-	prompt   string
-	line     *liner.State
-	conf     *config.Config
-	dumb     bool
-	InitFile string
+	client    service.Client
+	prompt    string
+	line      *liner.State
+	conf      *config.Config
+	dumb      bool
+	InitFile  string
+	WatchInit bool
 }
 
 func New(client service.Client, conf *config.Config) *Term {
@@ -86,8 +87,10 @@ func (t *Term) Run() (error, int) {
 	f.Close()
 	fmt.Println("Type 'help' for list of commands.")
 
+	cmds.InitFile = t.InitFile
+	cmds.WatchInit = t.WatchInit
 	if t.InitFile != "" {
-		err := cmds.executeFile(t, t.InitFile)
+		err := cmds.executeFile(t, t.InitFile, true)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error executing init file: %s\n", err)
 		}

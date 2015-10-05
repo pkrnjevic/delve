@@ -30,6 +30,7 @@ var (
 	Addr       string
 	InitFile   string
 	BuildFlags string
+	WatchInit bool
 )
 
 func main() {
@@ -53,6 +54,7 @@ The goal of this tool is to provide a simple yet powerful interface for debuggin
 	rootCommand.PersistentFlags().BoolVarP(&Headless, "headless", "", false, "Run debug server only, in headless mode.")
 	rootCommand.PersistentFlags().StringVar(&InitFile, "init", "", "Init file, executed by the terminal client.")
 	rootCommand.PersistentFlags().StringVar(&BuildFlags, "build-flags", "", "Build flags, to be passed to the compiler.")
+	rootCommand.PersistentFlags().BoolVarP(&WatchInit, "watch-init", "w", false, "Automatically reload init file on change")
 
 	// 'version' subcommand.
 	versionCommand := &cobra.Command{
@@ -309,6 +311,11 @@ func execute(attachPid int, processArgs []string, conf *config.Config) int {
 	}
 	defer listener.Close()
 
+	if WatchInit && (InitFile == "") {
+		fmt.Fprintf(os.Stderr, "--watch-init without init file")
+		os.Exit(1)
+	}
+
 	if Headless && (InitFile != "") {
 		fmt.Fprintf(os.Stderr, "Warning: init file ignored\n")
 	}
@@ -331,6 +338,7 @@ func execute(attachPid int, processArgs []string, conf *config.Config) int {
 		client = rpc.NewClient(listener.Addr().String())
 		term := terminal.New(client, conf)
 		term.InitFile = InitFile
+		term.WatchInit = WatchInit
 		err, status = term.Run()
 	} else {
 		ch := make(chan os.Signal)
