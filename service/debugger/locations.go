@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"io/ioutil"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -23,7 +25,7 @@ type LocationSpec interface {
 type NormalLocationSpec struct {
 	Base       string
 	FuncBase   *FuncLocationSpec
-	LineOffset int
+	LineOffset LineOffsetExprs
 }
 
 type RegexLocationSpec struct {
@@ -39,7 +41,7 @@ type OffsetLocationSpec struct {
 }
 
 type LineLocationSpec struct {
-	Line int
+	Line LineOffsetExprs
 }
 
 type FuncLocationSpec struct {
@@ -48,6 +50,29 @@ type FuncLocationSpec struct {
 	ReceiverName          string
 	PackageOrReceiverName string
 	BaseName              string
+}
+
+type LineOffsetOp int
+
+const (
+	LOO_PLUS  = LineOffsetOp(+1)
+	LOO_MINUS = LineOffsetOp(-1)
+)
+
+type LineOffsetExpr struct {
+	Op LineOffsetOp
+	Rx *regexp.Regexp
+	N  int
+}
+type LineOffsetExprs []LineOffsetExpr
+
+type LineOffsetExprErr struct {
+	Offset int
+	Reason string
+}
+
+func (err LineOffsetExprErr) Error() string {
+	return fmt.Sprintf("%d: %s", err.Offset, err.Reason)
 }
 
 func parseLocationSpec(locStr string) (LocationSpec, error) {
@@ -92,10 +117,6 @@ func parseLocationSpec(locStr string) (LocationSpec, error) {
 }
 
 func parseLocationSpecDefault(locStr, rest string) (LocationSpec, error) {
-	malformed := func(reason string) error {
-		return fmt.Errorf("Malformed breakpoint location \"%s\" at %d: %s", locStr, len(locStr)-len(rest), reason)
-	}
-
 	v := strings.Split(rest, ":")
 	if len(v) > 2 {
 		// On Windows, path may contain ":", so split only on last ":"
@@ -105,7 +126,7 @@ func parseLocationSpecDefault(locStr, rest string) (LocationSpec, error) {
 	if len(v) == 1 {
 		n, err := strconv.ParseInt(v[0], 0, 64)
 		if err == nil {
-			return &LineLocationSpec{int(n)}, nil
+			return &LineLocationSpec{[]LineOffsetExpr{{Op: LOO_PLUS, N: int(n)}}}, nil
 		}
 	}
 
@@ -115,16 +136,17 @@ func parseLocationSpecDefault(locStr, rest string) (LocationSpec, error) {
 	spec.FuncBase = parseFuncLocationSpec(spec.Base)
 
 	if len(v) < 2 {
-		spec.LineOffset = -1
+		spec.LineOffset = nil
 		return spec, nil
 	}
 
 	rest = v[1]
 
 	var err error
-	spec.LineOffset, err = strconv.Atoi(rest)
-	if err != nil || spec.LineOffset < 0 {
-		return nil, malformed("line offset negative or not a number")
+	spec.LineOffset, err = parseLineOffsetExpr(rest)
+	if err != nil {
+		e := err.(LineOffsetExprErr)
+		return nil, fmt.Errorf("Malformed breakpoint location \"%s\" at %d: %s", locStr, len(locStr)-(len(rest)-e.Offset), e.Reason)
 	}
 
 	return spec, nil
@@ -154,6 +176,17 @@ func readRegex(in string) (rx string, rest string) {
 		}
 	}
 	return string(out), ""
+}
+
+func readInt(in string) (n int, rest string) {
+	for i, ch := range in {
+		if ch < '0' || ch > '9' {
+			r, _ := strconv.Atoi(in[:i])
+			return int(r), in[i:]
+		}
+	}
+	r, _ := strconv.Atoi(in)
+	return int(r), ""
 }
 
 func parseFuncLocationSpec(in string) *FuncLocationSpec {
@@ -349,15 +382,25 @@ func (loc *NormalLocationSpec) Find(d *Debugger, scope *proc.EvalScope, locStr s
 		var addr uint64
 		var err error
 		if filepath.IsAbs(candidates[0]) {
-			if loc.LineOffset < 0 {
+			if loc.LineOffset == nil {
 				return nil, fmt.Errorf("Malformed breakpoint location, no line offset specified")
 			}
-			addr, err = d.process.FindFileLocation(candidates[0], loc.LineOffset)
+			var lineOffset int
+			lineOffset, err = loc.LineOffset.run(candidates[0], 0)
+			if err != nil {
+				return nil, err
+			}
+			addr, err = d.process.FindFileLocation(candidates[0], lineOffset)
 		} else {
-			if loc.LineOffset < 0 {
-				addr, err = d.process.FindFunctionLocation(candidates[0], true, 0)
-			} else {
-				addr, err = d.process.FindFunctionLocation(candidates[0], false, loc.LineOffset)
+			addr, err = d.process.FindFunctionLocation(candidates[0], loc.LineOffset == nil, 0)
+			if loc.LineOffset != nil && !loc.LineOffset.isZero(){
+				file, start, _ := d.process.PCToLine(addr)
+				var lineOffset int
+				lineOffset, err = loc.LineOffset.run(file, start)
+				if err != nil {
+					return nil, err
+				}
+				addr, err = d.process.FindFileLocation(file, lineOffset)
 			}
 		}
 		if err != nil {
@@ -392,6 +435,112 @@ func (loc *LineLocationSpec) Find(d *Debugger, scope *proc.EvalScope, locStr str
 	if fn == nil {
 		return nil, fmt.Errorf("could not determine current location")
 	}
-	addr, err := d.process.FindFileLocation(file, loc.Line)
+	line, err := loc.Line.run(file, 0)
+	if err != nil {
+		return nil, err
+	}
+	addr, err := d.process.FindFileLocation(file, line)
 	return []api.Location{{PC: addr}}, err
+}
+
+func parseLineOffsetExpr(in string) ([]LineOffsetExpr, error) {
+	s := in
+	var r []LineOffsetExpr = nil
+	op := LOO_PLUS
+
+	parseRegex := func(n int) error {
+		startoff := len(in) - len(s)
+		var rxstr string
+		rxstr, s = readRegex(s[1:])
+		if len(s) <= 0 || s[0] != '/' {
+			return LineOffsetExprErr{startoff, "non-terminated regular expression"}
+		}
+		s = s[1:]
+		rx, err := regexp.Compile(rxstr)
+		if err != nil {
+			return LineOffsetExprErr{startoff, fmt.Sprintf("malformed regular expression: %s", err)}
+		}
+		r = append(r, LineOffsetExpr{Op: op, N: n, Rx: rx})
+		return nil
+	}
+
+	canend := false
+
+	for len(s) > 0 {
+		if s[0] >= '0' && s[0] <= '9' {
+			var n int
+			n, s = readInt(s)
+			if len(s) > 0 && s[0] == '/' {
+				if err := parseRegex(n); err != nil {
+					return nil, err
+				}
+			} else {
+				r = append(r, LineOffsetExpr{Op: op, N: n})
+			}
+		} else if s[0] == '/' {
+			if err := parseRegex(1); err != nil {
+				return nil, err
+			}
+		} else {
+			return nil, LineOffsetExprErr{len(in) - len(s), fmt.Sprintf("unexpected character %c (expected number or regular expression)", s[0])}
+		}
+
+		canend = true
+		if len(s) > 0 {
+			canend = false
+			switch s[0] {
+			case '+':
+				op = LOO_PLUS
+			case '-':
+				op = LOO_MINUS
+			default:
+				return nil, LineOffsetExprErr{len(in) - len(s), fmt.Sprintf("unexpected character %c (expecting operator)", s[0])}
+			}
+			s = s[1:]
+		}
+	}
+
+	if !canend {
+		return nil, LineOffsetExprErr{len(in) - len(s), "unexpected end of expression"}
+	}
+
+	return r, nil
+}
+
+func (exprs *LineOffsetExprs) isZero() bool {
+	return len(*exprs) == 1 && (*exprs)[0].Rx == nil && (*exprs)[0].Op == 1 && (*exprs)[0].N == 0
+}
+
+func (expr *LineOffsetExprs) run(filename string, line int) (int, error) {
+	for i := range *expr {
+		var err error
+		line, err = (*expr)[i].run(filename, line)
+		if err != nil {
+			return 0, err
+		}
+	}
+	return line, nil
+}
+
+func (expr LineOffsetExpr) run(filename string, line int) (int, error) {
+	if expr.Rx == nil {
+		return line + int(expr.Op)*expr.N, nil
+	} else {
+		buf, err := ioutil.ReadFile(filename)
+		if err != nil {
+			return 0, err
+		}
+		lines := strings.Split(string(buf), "\n")
+		mcount := 0
+		// Note that line numbers start at 1, but the lines array starts at 0
+		for ; (line <= len(lines)) && (line >= 1); line += int(expr.Op) {
+			if expr.Rx.MatchString(lines[line-1]) {
+				mcount++
+			}
+			if mcount >= expr.N {
+				return line, nil
+			}
+		}
+		return 0, fmt.Errorf("could not find match for regular expression")
+	}
 }
