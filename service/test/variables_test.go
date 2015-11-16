@@ -588,6 +588,12 @@ func TestEvalExpression(t *testing.T) {
 		{"nil == 2", false, "", "", "", fmt.Errorf("can not compare int to nil")},
 		{"2 == nil", false, "", "", "", fmt.Errorf("can not compare int to nil")},
 
+		// ambiguous variables
+		{"amb1", true, "(ambiguous amb1)", "", "", nil},
+		{"0(amb1)", false, "1", "", "int", nil},
+		{"1(amb1)", false, "10", "", "int", nil},
+		{"2(amb1)", false, "", "", "", fmt.Errorf("variable amb1 only has 2 definitions")},
+
 		// errors
 		{"&3", false, "", "", "", fmt.Errorf("can not take address of \"3\"")},
 		{"*3", false, "", "", "", fmt.Errorf("expression \"3\" (int) can not be dereferenced")},

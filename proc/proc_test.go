@@ -1637,3 +1637,14 @@ func TestIssue149(t *testing.T) {
 		assertNoError(err, t, "FindFileLocation()")
 	})
 }
+
+func TestAmbiguousVariable(t *testing.T) {
+	withTestProcess("testvariables2", t, func(p *Process, fixture protest.Fixture) {
+		assertNoError(p.Continue(), t, "Continue() returned an error")
+		variable, err := evalVariable(p, "amb1")
+		assertNoError(err, t, "EvalVariable()")
+		if variable.Kind != reflect.Invalid || variable.DwarfType != nil || len(variable.Children) <= 0 {
+			t.Fatalf("Wrong value for amb1: %v\n", variable)
+		}
+	})
+}
