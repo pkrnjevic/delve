@@ -150,6 +150,8 @@ type Variable struct {
 	Addr uintptr `json:"addr"`
 	// Only the address field is filled (result of evaluating expressions like &<expr>)
 	OnlyAddr bool `json:"onlyAddr"`
+	// Ambiguous variable
+	Ambiguous bool `json:"ambiguous"`
 	// Go type of the variable
 	Type string `json:"type"`
 	// Type of the variable after resolving any typedefs

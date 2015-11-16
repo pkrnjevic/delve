@@ -105,6 +105,7 @@ func ConvertVar(v *proc.Variable) *Variable {
 	r := Variable{
 		Addr:     v.Addr,
 		OnlyAddr: v.OnlyAddr,
+		Ambiguous: v.Ambiguous,
 		Name:     v.Name,
 		Kind:     v.Kind,
 		Len:      v.Len,

@@ -36,6 +36,7 @@ const (
 type Variable struct {
 	Addr      uintptr
 	OnlyAddr  bool
+	Ambiguous bool
 	Name      string
 	DwarfType dwarf.Type
 	RealType  dwarf.Type
@@ -506,13 +507,15 @@ func (scope *EvalScope) extractVariableFromEntry(entry *dwarf.Entry, cfg LoadCon
 	return v, nil
 }
 
-func (scope *EvalScope) extractVarInfo(varName string) (*Variable, error) {
+func (scope *EvalScope) extractVarInfo(varName string) ([]*Variable, error) {
 	reader := scope.DwarfReader()
 
 	_, err := reader.SeekToFunction(scope.PC)
 	if err != nil {
 		return nil, err
 	}
+
+	vars := []*Variable{}
 
 	for entry, err := reader.NextScopeVariable(); entry != nil; entry, err = reader.NextScopeVariable() {
 		if err != nil {
@@ -525,10 +528,18 @@ func (scope *EvalScope) extractVarInfo(varName string) (*Variable, error) {
 		}
 
 		if n == varName {
-			return scope.extractVarInfoFromEntry(entry, reader)
+			v, err := scope.extractVarInfoFromEntry(entry, reader)
+			if err != nil {
+				return nil, err
+			}
+			vars = append(vars, v)
 		}
 	}
-	return nil, fmt.Errorf("could not find symbol value for %s", varName)
+	if len(vars) == 0 {
+		return nil, fmt.Errorf("could not find symbol value for %s", varName)
+	} else {
+		return vars, nil
+	}
 }
 
 // LocalVariables returns all local variables from the current function scope.

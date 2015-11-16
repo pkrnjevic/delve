@@ -10,6 +10,7 @@ import (
 	"go/printer"
 	"go/token"
 	"reflect"
+	"strconv"
 
 	"golang.org/x/debug/dwarf"
 	"github.com/derekparker/delve/dwarf/reader"
@@ -22,7 +23,12 @@ func (scope *EvalScope) EvalExpression(expr string, cfg LoadConfig) (*Variable, 
 		return nil, err
 	}
 
-	ev, err := scope.evalAST(t)
+	var ev *Variable
+	if ident, ok := t.(*ast.Ident); ok {
+		ev, err = scope.evalIdent(ident, true)
+	} else {
+		ev, err = scope.evalAST(t)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -37,6 +43,9 @@ func (scope *EvalScope) evalAST(t ast.Expr) (*Variable, error) {
 	switch node := t.(type) {
 	case *ast.CallExpr:
 		if len(node.Args) == 1 {
+			if sel, ok := node.Fun.(*ast.BasicLit); ok {
+				return scope.evalDisambiguation(sel, node.Args[0])
+			}
 			v, err := scope.evalTypeCast(node)
 			if err == nil {
 				return v, nil
@@ -54,7 +63,7 @@ func (scope *EvalScope) evalAST(t ast.Expr) (*Variable, error) {
 		return scope.evalBuiltinCall(node)
 
 	case *ast.Ident:
-		return scope.evalIdent(node)
+		return scope.evalIdent(node, false)
 
 	case *ast.ParenExpr:
 		// otherwise just eval recursively
@@ -429,7 +438,7 @@ func realBuiltin(args []*Variable, nodeargs []ast.Expr) (*Variable, error) {
 }
 
 // Evaluates identifier expressions
-func (scope *EvalScope) evalIdent(node *ast.Ident) (*Variable, error) {
+func (scope *EvalScope) evalIdent(node *ast.Ident, toplevel bool) (*Variable, error) {
 	switch node.Name {
 	case "true", "false":
 		return newConstant(constant.MakeBool(node.Name == "true"), scope.Thread), nil
@@ -438,27 +447,39 @@ func (scope *EvalScope) evalIdent(node *ast.Ident) (*Variable, error) {
 	}
 
 	// try to interpret this as a local variable
-	v, err := scope.extractVarInfo(node.Name)
-	if err == nil {
-		return v, nil
-	}
-	origErr := err
-	// workaround: sometimes go inserts an entry for '&varname' instead of varname
-	v, err = scope.extractVarInfo("&" + node.Name)
-	if err == nil {
-		v = v.maybeDereference()
-		v.Name = node.Name
-		return v, nil
-	}
-	// if it's not a local variable then it could be a package variable w/o explicit package name
-	_, _, fn := scope.Thread.dbp.PCToLine(scope.PC)
-	if fn != nil {
-		if v, err = scope.packageVarAddr(fn.PackageName() + "." + node.Name); err == nil {
-			v.Name = node.Name
-			return v, nil
+	vars, err := scope.extractVarInfo(node.Name)
+	if err != nil {
+		origErr := err
+		// workaround: sometimes go inserts an entry for '&varname' instead of varname
+		vars, err = scope.extractVarInfo("&" + node.Name)
+		if err != nil {
+			// if it's not a local variable then it could be a package variable w/o explicit package name
+			_, _, fn := scope.Thread.dbp.PCToLine(scope.PC)
+			if fn != nil {
+				if v, err := scope.packageVarAddr(fn.PackageName() + "." + node.Name); err == nil {
+					v.Name = node.Name
+					return v, nil
+				}
+			}
+			return nil, origErr
+		}
+		for i := range vars {
+			vars[i] = vars[i].maybeDereference()
+			vars[i].Name = node.Name
 		}
 	}
-	return nil, origErr
+	if len(vars) == 1 {
+		return vars[0], nil
+	}
+	if !toplevel {
+		return nil, fmt.Errorf("ambiguous variable: %s", node.Name)
+	}
+	v := &Variable{Name: node.Name, Ambiguous: true}
+	v.Children = make([]Variable, len(vars))
+	for i := range vars {
+		v.Children[i] = *vars[i]
+	}
+	return v, nil
 }
 
 // Evaluates expressions <subexpr>.<field name> where subexpr is not a package name
@@ -497,6 +518,29 @@ func (scope *EvalScope) evalTypeAssert(node *ast.TypeAssertExpr) (*Variable, err
 		return nil, fmt.Errorf("interface conversion: %s is %s, not %s", xv.DwarfType.Common().Name, xv.Children[0].TypeString(), typ.Common().Name)
 	}
 	return &xv.Children[0], nil
+}
+
+func (scope *EvalScope) evalDisambiguation(sel *ast.BasicLit, arg ast.Expr) (*Variable, error) {
+	idx, err := strconv.Atoi(sel.Value)
+	if err != nil {
+		return nil, err
+	}
+
+	ident, ok := arg.(*ast.Ident)
+	if !ok {
+		return nil, fmt.Errorf("can only disambiguate variables")
+	}
+
+	vars, err := scope.extractVarInfo(ident.Name)
+	if err != nil {
+		return nil, err
+	}
+
+	if idx >= len(vars) {
+		return nil, fmt.Errorf("variable %s only has %d definitions", ident.Name, len(vars))
+	}
+
+	return vars[idx], nil
 }
 
 // Evaluates expressions <subexpr>[<subexpr>] (subscript access to arrays, slices and maps)
