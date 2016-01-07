@@ -315,19 +315,24 @@ func (dbp *Process) trapWait(pid int) (*Thread, error) {
 }
 
 func (dbp *Process) setCurrentBreakpoints(trapthread *Thread) error {
-	trapthread.SetCurrentBreakpoint()
+	ports := make([]int, 0, len(dbp.Threads))
 	for {
 		port := C.mach_port_wait(dbp.os.portSet, C.int(1))
 		if port == 0 {
-			return nil
+			break
 		}
-		if th, ok := dbp.Threads[int(port)]; ok {
+		ports = append(ports, int(port))
+	}
+	trapthread.SetCurrentBreakpoint()
+	for _, port := range ports {
+		if th, ok := dbp.Threads[port]; ok {
 			err := th.SetCurrentBreakpoint()
 			if err != nil {
 				return err
 			}
 		}
 	}
+	return nil
 }
 
 func (dbp *Process) loadProcessInformation(wg *sync.WaitGroup) {
