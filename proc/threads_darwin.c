@@ -1,4 +1,5 @@
 #include "threads_darwin.h"
+#include <stdio.h>
 
 int
 write_memory(mach_port_name_t task, mach_vm_address_t addr, void *d, mach_msg_type_number_t len) {
@@ -134,4 +135,44 @@ thread_blocked(thread_act_t thread) {
 	if (kret != KERN_SUCCESS) return -1;
 
 	return info.suspend_count;
+}
+
+int
+num_running_threads(task_t task) {
+	kern_return_t kret;
+	thread_act_array_t list;
+	mach_msg_type_number_t count;
+	int i, n = 0;
+
+	kret = task_threads(task, &list, &count);
+	if (kret != KERN_SUCCESS) {
+		return -kret;
+	}
+
+	printf("checking %d threads\n", count);
+	for (i = 0; i < count; ++i) {
+		thread_act_t thread = list[i];
+		struct thread_basic_info info;
+		unsigned int info_count = THREAD_BASIC_INFO_COUNT;
+
+		kret = thread_info((thread_t)thread, THREAD_BASIC_INFO, (thread_info_t)&info, &info_count);
+
+		if (kret == KERN_SUCCESS) {
+			if (info.suspend_count == 0) {
+				printf("%x still running\n", thread);
+				++n;
+			} else {
+				printf("%x %d %d\n", thread, info.suspend_count, info.run_state);
+			}
+		} else {
+			printf("%x kret: %d\n", thread, kret);
+		}
+	}
+
+	fflush(stdout);
+
+	kret = vm_deallocate(mach_task_self(), (vm_address_t) list, count * sizeof(list[0]));
+	if (kret != KERN_SUCCESS) return -kret;
+
+	return n;
 }
