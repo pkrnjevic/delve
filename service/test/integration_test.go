@@ -1142,3 +1142,21 @@ func TestTypesCommand(t *testing.T) {
 		}
 	})
 }
+
+func TestEvalExprName(t *testing.T) {
+	withTestClient("testvariables2", t, func(c service.Client) {
+		state := <-c.Continue()
+		assertNoError(state.Err, t, "Continue()")
+
+		var1, err := c.EvalVariable(api.EvalScope{-1, 0}, "i1+1")
+		assertNoError(err, t, "EvalVariable")
+
+		const name = "i1+1"
+
+		t.Logf("i1+1 → %#v", var1)
+
+		if var1.Name != name {
+			t.Fatalf("Wrong variable name %q, expected %q", var1.Name, name)
+		}
+	})
+}
