@@ -56,11 +56,11 @@ type Client interface {
 	GetThread(id int) (*api.Thread, error)
 
 	// ListPackageVariables lists all package variables in the context of the current thread.
-	ListPackageVariables(filter string) ([]api.Variable, error)
+	ListPackageVariables(filter string, cfg api.LoadConfig) ([]api.Variable, error)
 	// EvalVariable returns a variable in the context of the current thread.
-	EvalVariable(scope api.EvalScope, symbol string) (*api.Variable, error)
+	EvalVariable(scope api.EvalScope, symbol string, cfg api.LoadConfig) (*api.Variable, error)
 	// ListPackageVariablesFor lists all package variables in the context of a thread.
-	ListPackageVariablesFor(threadID int, filter string) ([]api.Variable, error)
+	ListPackageVariablesFor(threadID int, filter string, cfg api.LoadConfig) ([]api.Variable, error)
 
 	// SetVariable sets the value of a variable
 	SetVariable(scope api.EvalScope, symbol, value string) error
@@ -72,9 +72,9 @@ type Client interface {
 	// ListTypes lists all types in the process matching filter.
 	ListTypes(filter string) ([]string, error)
 	// ListLocals lists all local variables in scope.
-	ListLocalVariables(scope api.EvalScope) ([]api.Variable, error)
+	ListLocalVariables(scope api.EvalScope, cfg api.LoadConfig) ([]api.Variable, error)
 	// ListFunctionArgs lists all arguments to the current function.
-	ListFunctionArgs(scope api.EvalScope) ([]api.Variable, error)
+	ListFunctionArgs(scope api.EvalScope, cfg api.LoadConfig) ([]api.Variable, error)
 	// ListRegisters lists registers and their values.
 	ListRegisters() (string, error)
 
@@ -82,7 +82,7 @@ type Client interface {
 	ListGoroutines() ([]*api.Goroutine, error)
 
 	// Returns stacktrace
-	Stacktrace(int, int, bool) ([]api.Stackframe, error)
+	Stacktrace(int, int, *api.LoadConfig) ([]api.Stackframe, error)
 
 	// Returns whether we attached to a running process or not
 	AttachedToExistingProcess() bool

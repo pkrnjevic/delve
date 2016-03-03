@@ -24,10 +24,12 @@ type Breakpoint struct {
 	Temp         bool   // Whether this is a temp breakpoint (for next'ing).
 
 	// Breakpoint information
-	Tracepoint    bool           // Tracepoint flag
-	Stacktrace    int            // Number of stack frames to retrieve
-	Goroutine     bool           // Retrieve goroutine information
-	Variables     []string       // Variables to evaluate
+	Tracepoint    bool     // Tracepoint flag
+	Stacktrace    int      // Number of stack frames to retrieve
+	Goroutine     bool     // Retrieve goroutine information
+	Variables     []string // Variables to evaluate
+	LoadArgs      *LoadConfig
+	LoadLocals    *LoadConfig
 	HitCount      map[int]uint64 // Number of times a breakpoint has been reached in a certain goroutine
 	TotalHitCount uint64         // Number of times a breakpoint has been reached
 

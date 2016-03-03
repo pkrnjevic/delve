@@ -347,3 +347,44 @@ func TestOnPrefix(t *testing.T) {
 		}
 	})
 }
+
+func TestOnPrefixLocals(t *testing.T) {
+	const prefix = "\ti: "
+	withTestTerminal("goroutinestackprog", t, func(term *FakeTerminal) {
+		term.MustExec("b agobp main.agoroutine")
+		term.MustExec("on agobp args -v")
+
+		seen := make([]bool, 10)
+
+		for {
+			outstr, err := term.Exec("continue")
+			if err != nil {
+				if strings.Index(err.Error(), "exited") < 0 {
+					t.Fatalf("Unexpected error executing 'continue': %v", err)
+				}
+				break
+			}
+			out := strings.Split(outstr, "\n")
+
+			for i := range out {
+				if !strings.HasPrefix(out[i], "\ti: ") {
+					continue
+				}
+				id, err := strconv.Atoi(out[i][len(prefix):])
+				if err != nil {
+					continue
+				}
+				if seen[id] {
+					t.Fatalf("Goroutine %d seen twice\n", id)
+				}
+				seen[id] = true
+			}
+		}
+
+		for i := range seen {
+			if !seen[i] {
+				t.Fatalf("Goroutine %d not seen\n", i)
+			}
+		}
+	})
+}

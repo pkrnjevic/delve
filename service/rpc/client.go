@@ -186,9 +186,9 @@ func (c *RPCClient) GetThread(id int) (*api.Thread, error) {
 	return thread, err
 }
 
-func (c *RPCClient) EvalVariable(scope api.EvalScope, symbol string) (*api.Variable, error) {
+func (c *RPCClient) EvalVariable(scope api.EvalScope, symbol string, cfg api.LoadConfig) (*api.Variable, error) {
 	v := new(api.Variable)
-	err := c.call("EvalSymbol", EvalSymbolArgs{scope, symbol}, v)
+	err := c.call("EvalSymbol", EvalSymbolArgs{scope, symbol, cfg}, v)
 	return v, err
 }
 
@@ -215,21 +215,21 @@ func (c *RPCClient) ListTypes(filter string) ([]string, error) {
 	return types, err
 }
 
-func (c *RPCClient) ListPackageVariables(filter string) ([]api.Variable, error) {
+func (c *RPCClient) ListPackageVariables(filter string, cfg api.LoadConfig) ([]api.Variable, error) {
 	var vars []api.Variable
-	err := c.call("ListPackageVars", filter, &vars)
+	err := c.call("ListPackageVars", &ListPackageVarsArgs{filter, cfg}, &vars)
 	return vars, err
 }
 
-func (c *RPCClient) ListPackageVariablesFor(threadID int, filter string) ([]api.Variable, error) {
+func (c *RPCClient) ListPackageVariablesFor(threadID int, filter string, cfg api.LoadConfig) ([]api.Variable, error) {
 	var vars []api.Variable
-	err := c.call("ListThreadPackageVars", &ThreadListArgs{Id: threadID, Filter: filter}, &vars)
+	err := c.call("ListThreadPackageVars", &ThreadListArgs{Id: threadID, Filter: filter, Cfg: cfg}, &vars)
 	return vars, err
 }
 
-func (c *RPCClient) ListLocalVariables(scope api.EvalScope) ([]api.Variable, error) {
+func (c *RPCClient) ListLocalVariables(scope api.EvalScope, cfg api.LoadConfig) ([]api.Variable, error) {
 	var vars []api.Variable
-	err := c.call("ListLocalVars", scope, &vars)
+	err := c.call("ListLocalVars", &ListLocalVarsArgs{scope, cfg}, &vars)
 	return vars, err
 }
 
@@ -239,9 +239,9 @@ func (c *RPCClient) ListRegisters() (string, error) {
 	return regs, err
 }
 
-func (c *RPCClient) ListFunctionArgs(scope api.EvalScope) ([]api.Variable, error) {
+func (c *RPCClient) ListFunctionArgs(scope api.EvalScope, cfg api.LoadConfig) ([]api.Variable, error) {
 	var vars []api.Variable
-	err := c.call("ListFunctionArgs", scope, &vars)
+	err := c.call("ListFunctionArgs", &ListLocalVarsArgs{scope, cfg}, &vars)
 	return vars, err
 }
 
@@ -251,9 +251,9 @@ func (c *RPCClient) ListGoroutines() ([]*api.Goroutine, error) {
 	return goroutines, err
 }
 
-func (c *RPCClient) Stacktrace(goroutineId, depth int, full bool) ([]api.Stackframe, error) {
+func (c *RPCClient) Stacktrace(goroutineId, depth int, cfg *api.LoadConfig) ([]api.Stackframe, error) {
 	var locations []api.Stackframe
-	err := c.call("StacktraceGoroutine", &StacktraceGoroutineArgs{Id: goroutineId, Depth: depth, Full: full}, &locations)
+	err := c.call("StacktraceGoroutine", &StacktraceGoroutineArgs{Id: goroutineId, Depth: depth, Cfg: cfg}, &locations)
 	return locations, err
 }
 

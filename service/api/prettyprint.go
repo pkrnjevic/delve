@@ -23,7 +23,6 @@ func (v *Variable) SinglelineString() string {
 // Returns a representation of v on multiple lines
 func (v *Variable) MultilineString(indent string) string {
 	var buf bytes.Buffer
-	buf.WriteString(indent)
 	v.writeTo(&buf, true, true, true, indent)
 	return buf.String()
 }
@@ -47,7 +46,7 @@ func (v *Variable) writeTo(buf *bytes.Buffer, top, newlines, includeType bool, i
 	case reflect.Ptr:
 		if v.Type == "" {
 			fmt.Fprintf(buf, "nil")
-		} else if v.Children[0].OnlyAddr {
+		} else if v.Children[0].OnlyAddr && v.Children[0].Addr != 0 {
 			fmt.Fprintf(buf, "(%s)(0x%x)", v.Type, v.Children[0].Addr)
 		} else {
 			fmt.Fprintf(buf, "*")
@@ -81,7 +80,18 @@ func (v *Variable) writeTo(buf *bytes.Buffer, top, newlines, includeType bool, i
 				fmt.Fprintf(buf, "%s(%s) ", v.Type, v.Children[0].Type)
 			}
 		}
-		v.Children[0].writeTo(buf, false, newlines, false, indent)
+		data := v.Children[0]
+		if data.Kind == reflect.Ptr {
+			if data.Children[0].Addr == 0 {
+				fmt.Fprintf(buf, "nil")
+			} else if data.Children[0].OnlyAddr {
+				fmt.Fprintf(buf, "0x%x", v.Children[0].Addr)
+			} else {
+				v.Children[0].writeTo(buf, false, newlines, false, indent)
+			}
+		} else {
+			v.Children[0].writeTo(buf, false, newlines, false, indent)
+		}
 	case reflect.Map:
 		v.writeMapTo(buf, newlines, includeType, indent)
 	case reflect.Func:
@@ -124,7 +134,7 @@ func (v *Variable) writeArrayTo(buf *bytes.Buffer, newlines, includeType bool, i
 }
 
 func (v *Variable) writeStructTo(buf *bytes.Buffer, newlines, includeType bool, indent string) {
-	if int(v.Len) != len(v.Children) {
+	if int(v.Len) != len(v.Children) && len(v.Children) == 0 {
 		fmt.Fprintf(buf, "(*%s)(0x%x)", v.Type, v.Addr)
 		return
 	}
@@ -151,9 +161,15 @@ func (v *Variable) writeStructTo(buf *bytes.Buffer, newlines, includeType bool, 
 		}
 	}
 
-	if nl {
-		fmt.Fprintf(buf, "\n%s", indent)
+	if len(v.Children) != int(v.Len) {
+		if nl {
+			fmt.Fprintf(buf, "\n%s%s", indent, indentString)
+		} else {
+			fmt.Fprintf(buf, ",")
+		}
+		fmt.Fprintf(buf, "...+%d more", int(v.Len)-len(v.Children))
 	}
+
 	fmt.Fprintf(buf, "}")
 }
 
@@ -183,12 +199,16 @@ func (v *Variable) writeMapTo(buf *bytes.Buffer, newlines, includeType bool, ind
 	}
 
 	if len(v.Children)/2 != int(v.Len) {
-		if nl {
-			fmt.Fprintf(buf, "\n%s%s", indent, indentString)
+		if len(v.Children) != 0 {
+			if nl {
+				fmt.Fprintf(buf, "\n%s%s", indent, indentString)
+			} else {
+				fmt.Fprintf(buf, ",")
+			}
+			fmt.Fprintf(buf, "...+%d more", int(v.Len)-(len(v.Children)/2))
 		} else {
-			fmt.Fprintf(buf, ",")
+			fmt.Fprintf(buf, "...")
 		}
-		fmt.Fprintf(buf, "...+%d more", int(v.Len)-(len(v.Children)/2))
 	}
 
 	if nl {
@@ -276,12 +296,16 @@ func (v *Variable) writeSliceOrArrayTo(buf *bytes.Buffer, newlines bool, indent 
 	}
 
 	if len(v.Children) != int(v.Len) {
-		if nl {
-			fmt.Fprintf(buf, "\n%s%s", indent, indentString)
+		if len(v.Children) != 0 {
+			if nl {
+				fmt.Fprintf(buf, "\n%s%s", indent, indentString)
+			} else {
+				fmt.Fprintf(buf, ",")
+			}
+			fmt.Fprintf(buf, "...+%d more", int(v.Len)-len(v.Children))
 		} else {
-			fmt.Fprintf(buf, ",")
+			fmt.Fprintf(buf, "...")
 		}
-		fmt.Fprintf(buf, "...+%d more", int(v.Len)-len(v.Children))
 	}
 
 	if nl {

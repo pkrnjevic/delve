@@ -155,11 +155,12 @@ func (s *RPCServer) GetBreakpointByName(name string, breakpoint *api.Breakpoint)
 type StacktraceGoroutineArgs struct {
 	Id    int
 	Depth int
-	Full  bool
+	// Cfg specifies how arguments and local variables should be loaded. Pass nil to load nothing
+	Cfg *api.LoadConfig
 }
 
 func (s *RPCServer) StacktraceGoroutine(args *StacktraceGoroutineArgs, locations *[]api.Stackframe) error {
-	locs, err := s.debugger.Stacktrace(args.Id, args.Depth, args.Full)
+	locs, err := s.debugger.Stacktrace(args.Id, args.Depth, api.LoadConfigToProc(args.Cfg))
 	if err != nil {
 		return err
 	}
@@ -229,7 +230,12 @@ func (s *RPCServer) GetThread(id int, thread *api.Thread) error {
 	return nil
 }
 
-func (s *RPCServer) ListPackageVars(filter string, variables *[]api.Variable) error {
+type ListPackageVarsArgs struct {
+	Filter string
+	Cfg    api.LoadConfig
+}
+
+func (s *RPCServer) ListPackageVars(args ListPackageVarsArgs, variables *[]api.Variable) error {
 	state, err := s.debugger.State()
 	if err != nil {
 		return err
@@ -240,7 +246,7 @@ func (s *RPCServer) ListPackageVars(filter string, variables *[]api.Variable) er
 		return fmt.Errorf("no current thread")
 	}
 
-	vars, err := s.debugger.PackageVariables(current.ID, filter)
+	vars, err := s.debugger.PackageVariables(current.ID, args.Filter, *api.LoadConfigToProc(&args.Cfg))
 	if err != nil {
 		return err
 	}
@@ -251,6 +257,7 @@ func (s *RPCServer) ListPackageVars(filter string, variables *[]api.Variable) er
 type ThreadListArgs struct {
 	Id     int
 	Filter string
+	Cfg    api.LoadConfig
 }
 
 func (s *RPCServer) ListThreadPackageVars(args *ThreadListArgs, variables *[]api.Variable) error {
@@ -262,7 +269,7 @@ func (s *RPCServer) ListThreadPackageVars(args *ThreadListArgs, variables *[]api
 		return fmt.Errorf("no thread with id %d", args.Id)
 	}
 
-	vars, err := s.debugger.PackageVariables(args.Id, args.Filter)
+	vars, err := s.debugger.PackageVariables(args.Id, args.Filter, *api.LoadConfigToProc(&args.Cfg))
 	if err != nil {
 		return err
 	}
@@ -284,8 +291,13 @@ func (s *RPCServer) ListRegisters(arg interface{}, registers *string) error {
 	return nil
 }
 
-func (s *RPCServer) ListLocalVars(scope api.EvalScope, variables *[]api.Variable) error {
-	vars, err := s.debugger.LocalVariables(scope)
+type ListLocalVarsArgs struct {
+	Scope api.EvalScope
+	Cfg   api.LoadConfig
+}
+
+func (s *RPCServer) ListLocalVars(args ListLocalVarsArgs, variables *[]api.Variable) error {
+	vars, err := s.debugger.LocalVariables(args.Scope, *api.LoadConfigToProc(&args.Cfg))
 	if err != nil {
 		return err
 	}
@@ -293,8 +305,8 @@ func (s *RPCServer) ListLocalVars(scope api.EvalScope, variables *[]api.Variable
 	return nil
 }
 
-func (s *RPCServer) ListFunctionArgs(scope api.EvalScope, variables *[]api.Variable) error {
-	vars, err := s.debugger.FunctionArguments(scope)
+func (s *RPCServer) ListFunctionArgs(args ListLocalVarsArgs, variables *[]api.Variable) error {
+	vars, err := s.debugger.FunctionArguments(args.Scope, *api.LoadConfigToProc(&args.Cfg))
 	if err != nil {
 		return err
 	}
@@ -305,10 +317,11 @@ func (s *RPCServer) ListFunctionArgs(scope api.EvalScope, variables *[]api.Varia
 type EvalSymbolArgs struct {
 	Scope  api.EvalScope
 	Symbol string
+	Cfg    api.LoadConfig
 }
 
 func (s *RPCServer) EvalSymbol(args EvalSymbolArgs, variable *api.Variable) error {
-	v, err := s.debugger.EvalVariableInScope(args.Scope, args.Symbol)
+	v, err := s.debugger.EvalVariableInScope(args.Scope, args.Symbol, *api.LoadConfigToProc(&args.Cfg))
 	if err != nil {
 		return err
 	}

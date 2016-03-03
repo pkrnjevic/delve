@@ -50,8 +50,12 @@ type Breakpoint struct {
 	Stacktrace int `json:"stacktrace"`
 	// retrieve goroutine information
 	Goroutine bool `json:"goroutine"`
-	// variables to evaluate
+	// expressions to evaluate
 	Variables []string `json:"variables,omitempty"`
+	// LoadArgs requests loading function arguments when the breakpoint is hit
+	LoadArgs *LoadConfig
+	// LoadLocals requests loading function locals when the breakpoint is hit
+	LoadLocals *LoadConfig
 	// number of times a breakpoint has been reached in a certain goroutine
 	HitCount map[string]uint64 `json:"hitCount"`
 	// number of times a breakpoint has been reached
@@ -165,6 +169,20 @@ type Variable struct {
 	Unreadable string `json:"unreadable"`
 }
 
+// LoadConfig describes how to load values from target's memory
+type LoadConfig struct {
+	// FollowPointers requests pointers to be automatically dereferenced.
+	FollowPointers bool
+	// MaxVariableRecurse is how far to recurse when evaluating nested types.
+	MaxVariableRecurse int
+	// MaxStringLen is the maximum number of bytes read from a string
+	MaxStringLen int
+	// MaxArrayValues is the maximum number of elements read from an array, a slice or a map.
+	MaxArrayValues int
+	// MaxStructFields is the maximum number of fields read from a struct, -1 will read all fields.
+	MaxStructFields int
+}
+
 // Goroutine represents the information relevant to Delve from the runtime's
 // internal G structure.
 type Goroutine struct {
@@ -196,6 +214,7 @@ type BreakpointInfo struct {
 	Goroutine  *Goroutine   `json:"goroutine,omitempty"`
 	Variables  []Variable   `json:"variables,omitempty"`
 	Arguments  []Variable   `json:"arguments,omitempty"`
+	Locals     []Variable   `json:"locals,omitempty"`
 }
 
 type EvalScope struct {
