@@ -4,11 +4,11 @@ import (
 	"debug/gosym"
 	"fmt"
 	"go/constant"
+	"io/ioutil"
 	"path/filepath"
 	"reflect"
-	"runtime"
-	"io/ioutil"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -393,7 +393,7 @@ func (loc *NormalLocationSpec) Find(d *Debugger, scope *proc.EvalScope, locStr s
 			addr, err = d.process.FindFileLocation(candidates[0], lineOffset)
 		} else {
 			addr, err = d.process.FindFunctionLocation(candidates[0], loc.LineOffset == nil, 0)
-			if loc.LineOffset != nil && !loc.LineOffset.isZero(){
+			if loc.LineOffset != nil && !loc.LineOffset.isZero() {
 				file, start, _ := d.process.PCToLine(addr)
 				var lineOffset int
 				lineOffset, err = loc.LineOffset.run(file, start)
