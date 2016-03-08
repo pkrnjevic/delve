@@ -1,0 +1,31 @@
+<!doctype html>
+<html>
+	<head>
+		<title>vdlv</title>
+		<meta charset="UTF-8">
+		<link rel="stylesheet" type="text/css" href="css.css">
+		<script src="js.js"></script>
+	</head>
+	<body>
+		<div id='container'>
+			<div id='topbar'>
+				【<a href='javascript:toggletop()'>Listing</a>】
+			</div>
+			<div id='tophalf' style='height: calc(50% - 26px)'>
+			</div>
+			<div id='bothalf' style='height: calc(50% - 26px);'>
+				<textarea id='console' onkeyup='console_keyup(event)'>(dlv) </textarea>
+			</div>
+			<div id='botbar'>
+				【Console】
+				<input type='button' value='Interrupt' style='float: right' onclick='interrupt()'>
+			</div>
+		</div>
+		<script>
+			var c = document.getElementById("console");
+			c.selectionStart = c.value.length;
+			c.selectionEnd = c.value.length;
+			c.focus();
+		</script>
+	</body>
+</html>

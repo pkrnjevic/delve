@@ -23,13 +23,15 @@ const (
 
 // Term represents the terminal running dlv.
 type Term struct {
-	client   service.Client
-	prompt   string
-	line     *liner.State
-	conf     *config.Config
-	cmds     *Commands
-	dumb     bool
-	InitFile string
+	client    service.Client
+	prompt    string
+	line      *liner.State
+	conf      *config.Config
+	cmds      *Commands
+	Out       io.Writer
+	dumb      bool
+	InitFile  string
+	PrintFile func(filename string, line int, showArrow bool) error
 }
 
 // New returns a new Term.
@@ -43,13 +45,39 @@ func New(client service.Client, conf *config.Config) *Term {
 		line:   liner.NewLiner(),
 		client: client,
 		cmds:   cmds,
+		Out:    os.Stdout,
 		dumb:   strings.ToLower(os.Getenv("TERM")) == "dumb",
+	}
+}
+
+func NewSimple(client service.Client, conf *config.Config, out io.Writer) *Term {
+	cmds := DebugCommands(client)
+	if conf != nil && conf.Aliases != nil {
+		cmds.Merge(conf.Aliases)
+	}
+	return &Term{
+		prompt: "(dlv) ",
+		line:   nil,
+		client: client,
+		cmds:   cmds,
+		Out:    out,
+		dumb:   true,
 	}
 }
 
 // Close returns the terminal to its previous mode.
 func (t *Term) Close() {
 	t.line.Close()
+}
+
+func (t *Term) Call(cmd string) error {
+	cmdstr, args := parseCommand(cmd)
+	return t.cmds.Call(cmdstr, args, t)
+}
+
+func (t *Term) CallWithContext(cmd string, ctx CallContext) error {
+	cmdstr, args := parseCommand(cmd)
+	return t.cmds.CallWithContext(cmdstr, args, t, ctx)
 }
 
 // Run begins running dlv in the terminal.
@@ -140,7 +168,7 @@ func (t *Term) Println(prefix, str string) {
 	if !t.dumb {
 		prefix = fmt.Sprintf("%s%s%s", terminalBlueEscapeCode, prefix, terminalResetEscapeCode)
 	}
-	fmt.Printf("%s%s\n", prefix, str)
+	fmt.Fprintf(t.Out, "%s%s\n", prefix, str)
 }
 
 func (t *Term) promptForInput() (string, error) {
