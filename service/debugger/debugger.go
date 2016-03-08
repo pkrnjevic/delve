@@ -485,9 +485,10 @@ func (d *Debugger) collectBreakpointInformation(state *api.DebuggerState) error 
 		for i := range bp.Variables {
 			v, err := s.EvalVariable(bp.Variables[i], proc.LoadConfig{true, 1, 64, 64, -1})
 			if err != nil {
-				return err
+				bpi.Variables[i] = api.Variable{Name: bp.Variables[i], Unreadable: err.Error()}
+			} else {
+				bpi.Variables[i] = *api.ConvertVar(v)
 			}
-			bpi.Variables[i] = *api.ConvertVar(v)
 		}
 		if bp.LoadArgs != nil {
 			if vars, err := s.FunctionArguments(*api.LoadConfigToProc(bp.LoadArgs)); err == nil {
