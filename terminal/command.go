@@ -212,6 +212,11 @@ Supported commands: print, stack and goroutine)`},
 	condition <breakpoint name or id> <boolean expression>.
 	
 Specifies that the breakpoint or tracepoint should break only if the boolean expression is true.`},
+		{aliases: []string{"bpedit"}, cmdFn: bpEdit, helpMsg: `Edit persistent breakpoints.
+
+	bpedit
+
+Environment variable $EDITOR must be set.`},
 	}
 
 	sort.Sort(ByFirstAlias(c.cmds))
@@ -1299,6 +1304,8 @@ func (ere ExitRequestError) Error() string {
 }
 
 func exitCommand(t *Term, ctx callContext, args string) error {
+	updateBreakpoints(t.client)
+	saveBreakpoints()
 	return ExitRequestError{}
 }
 
@@ -1348,6 +1355,47 @@ func conditionCmd(t *Term, ctx callContext, argstr string) error {
 	bp.Cond = args[1]
 
 	return t.client.AmendBreakpoint(bp)
+}
+
+func bpEdit(t *Term, ctx callContext, argstr string) error {
+	updateBreakpoints(t.client)
+	newpbp, err := editBreakpoints()
+	if err != nil {
+		return err
+	}
+
+	seen := make([]bool, len(persistentBreakpoints))
+
+	for _, newbp := range newpbp {
+		i := persistentBreakpoints.Index(newbp.Filename, newbp.Line)
+		if i < 0 {
+			continue
+		}
+		seen[i] = true
+		bp := persistentBreakpoints[i]
+		bp.Name = newbp.Name
+		bp.Tracepoint = newbp.Tracepoint
+		bp.Commands = newbp.Commands
+		if newbp.Enabled {
+			bp.Enable(t)
+		} else {
+			bp.Disable(t)
+		}
+	}
+
+	for i := range persistentBreakpoints {
+		if persistentBreakpoints[i] == nil {
+			continue
+		}
+		if !seen[i] {
+			persistentBreakpoints[i].Disable(t)
+			persistentBreakpoints[i] = nil
+		}
+	}
+
+	updateBreakpoints(t.client)
+	saveBreakpoints()
+	return nil
 }
 
 // ShortenFilePath take a full file path and attempts to shorten

@@ -115,6 +115,10 @@ func (t *Term) Run() (int, error) {
 		}
 	}
 
+	findBreakpointFileLocation(t.client)
+	restoreBreakpoints(t)
+	saveBreakpoints()
+
 	for {
 		cmdstr, err := t.promptForInput()
 		if err != nil {
