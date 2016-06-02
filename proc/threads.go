@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"go/ast"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -188,11 +187,19 @@ func (dbp *Process) next(g *G, topframe Stackframe) error {
 			return nil
 		}
 	}
+	cond := sameGoroutineCondition(dbp.SelectedGoroutine)
 	if deferpc != 0 {
-		pcs = append(pcs, deferpc)
+		var deferCond *BreakpointCondition = nil
+		if cond != nil {
+			deferCond = &BreakpointCondition{goroutineID: cond.goroutineID, isPanic: true}
+		}
+
+		if _, err := dbp.SetTempBreakpoint(deferpc, deferCond); err != nil {
+			return err
+		}
 	}
 	pcs = append(pcs, topframe.Ret)
-	return dbp.setTempBreakpoints(topframe.Current.PC, pcs, sameGoroutineCondition(dbp.SelectedGoroutine))
+	return dbp.setTempBreakpoints(topframe.Current.PC, pcs, cond)
 }
 
 // Set a breakpoint at every reachable location, as well as the return address. Without
@@ -206,7 +213,7 @@ func (dbp *Process) cnext(topframe Stackframe) error {
 
 // setTempBreakpoints sets a breakpoint to all addresses specified in pcs
 // skipping over curpc and curpc-1
-func (dbp *Process) setTempBreakpoints(curpc uint64, pcs []uint64, cond ast.Expr) error {
+func (dbp *Process) setTempBreakpoints(curpc uint64, pcs []uint64, cond *BreakpointCondition) error {
 	for i := range pcs {
 		if pcs[i] == curpc || pcs[i] == curpc-1 {
 			continue
@@ -382,8 +389,13 @@ func (thread *Thread) onNextGoroutine() (bool, error) {
 			bp = thread.dbp.Breakpoints[i]
 		}
 	}
-	if bp == nil {
+	if bp == nil || bp.Cond == nil {
 		return false, nil
 	}
-	return bp.checkCondition(thread)
+	g, err := thread.GetG()
+	if err != nil {
+		return true, err
+	}
+	// explicitly ignores bp.Cond.isPanic
+	return g.ID == bp.Cond.goroutineID, nil
 }
