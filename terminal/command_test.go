@@ -187,8 +187,8 @@ func TestExecuteFile(t *testing.T) {
 }
 
 func TestIssue354(t *testing.T) {
-	printStack([]api.Stackframe{}, "")
-	printStack([]api.Stackframe{{api.Location{PC: 0, File: "irrelevant.go", Line: 10, Function: nil}, nil, nil}}, "")
+	printStack(os.Stdout, []api.Stackframe{}, "")
+	printStack(os.Stdout, []api.Stackframe{{api.Location{PC: 0, File: "irrelevant.go", Line: 10, Function: nil}, nil, nil}}, "")
 }
 
 func TestIssue411(t *testing.T) {

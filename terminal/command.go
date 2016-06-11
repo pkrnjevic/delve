@@ -28,6 +28,7 @@ const (
 	noPrefix    = cmdPrefix(0)
 	scopePrefix = cmdPrefix(1 << iota)
 	onPrefix
+	windowPrefix
 )
 
 type callContext struct {
@@ -103,7 +104,7 @@ See also: "help on", "help cond" and "help clear"`},
 		{aliases: []string{"step-instruction", "si"}, allowedPrefixes: scopePrefix, cmdFn: stepInstruction, helpMsg: "Single step a single cpu instruction."},
 		{aliases: []string{"next", "n"}, allowedPrefixes: scopePrefix, cmdFn: next, helpMsg: "Step over to next source line."},
 		{aliases: []string{"stepout"}, allowedPrefixes: scopePrefix, cmdFn: stepout, helpMsg: "Step out of the current function."},
-		{aliases: []string{"threads"}, cmdFn: threads, helpMsg: "Print out info for every traced thread."},
+		{aliases: []string{"threads"}, allowedPrefixes: windowPrefix, cmdFn: threads, helpMsg: "Print out info for every traced thread."},
 		{aliases: []string{"thread", "tr"}, cmdFn: thread, helpMsg: `Switch to the specified thread.
 
 	thread <id>`},
@@ -115,7 +116,7 @@ See also: "help on", "help cond" and "help clear"`},
 	clearall [<linespec>]
 	
 If called with the linespec argument it will delete all the breakpoints matching the linespec. If linespec is omitted all breakpoints are deleted.`},
-		{aliases: []string{"goroutines"}, cmdFn: goroutines, helpMsg: `List program goroutines.
+		{aliases: []string{"goroutines"}, allowedPrefixes: windowPrefix, cmdFn: goroutines, helpMsg: `List program goroutines.
 
 	goroutines [-u (default: user location)|-r (runtime location)|-g (go statement location)]
 
@@ -135,8 +136,8 @@ If no flag is specified the default is -u.`},
 Called without arguments it will show information about the current goroutine.
 Called with a single argument it will switch to the specified goroutine.
 Called with more arguments it will execute a command on the specified goroutine.`},
-		{aliases: []string{"breakpoints", "bp"}, cmdFn: breakpoints, helpMsg: "Print out info for active breakpoints."},
-		{aliases: []string{"print", "p"}, allowedPrefixes: onPrefix | scopePrefix, cmdFn: printVar, helpMsg: `Evaluate an expression.
+		{aliases: []string{"breakpoints", "bp"}, allowedPrefixes: windowPrefix, cmdFn: breakpoints, helpMsg: "Print out info for active breakpoints."},
+		{aliases: []string{"print", "p"}, allowedPrefixes: windowPrefix | onPrefix | scopePrefix, cmdFn: printVar, helpMsg: `Evaluate an expression.
 
 	[goroutine <n>] [frame <m>] print <expression>
 
@@ -161,29 +162,29 @@ If regex is specified only the functions matching it will be returned.`},
 	types [<regex>]
 
 If regex is specified only the functions matching it will be returned.`},
-		{aliases: []string{"args"}, allowedPrefixes: scopePrefix | onPrefix, cmdFn: args, helpMsg: `Print function arguments.
+		{aliases: []string{"args"}, allowedPrefixes: windowPrefix | scopePrefix | onPrefix, cmdFn: args, helpMsg: `Print function arguments.
 
 	[goroutine <n>] [frame <m>] args [-v] [<regex>]
 
 If regex is specified only function arguments with a name matching it will be returned. If -v is specified more information about each function argument will be shown.`},
-		{aliases: []string{"locals"}, allowedPrefixes: scopePrefix | onPrefix, cmdFn: locals, helpMsg: `Print local variables.
+		{aliases: []string{"locals"}, allowedPrefixes: windowPrefix | scopePrefix | onPrefix, cmdFn: locals, helpMsg: `Print local variables.
 
 	[goroutine <n>] [frame <m>] locals [-v] [<regex>]
 
 If regex is specified only local variables with a name matching it will be returned. If -v is specified more information about each local variable will be shown.`},
-		{aliases: []string{"vars"}, cmdFn: vars, helpMsg: `Print package variables.
+		{aliases: []string{"vars"}, allowedPrefixes: windowPrefix, cmdFn: vars, helpMsg: `Print package variables.
 
 	vars [-v] [<regex>]
 
 If regex is specified only package variables with a name matching it will be returned. If -v is specified more information about each package variable will be shown.`},
-		{aliases: []string{"regs"}, cmdFn: regs, helpMsg: "Print contents of CPU registers."},
+		{aliases: []string{"regs"}, allowedPrefixes: windowPrefix, cmdFn: regs, helpMsg: "Print contents of CPU registers."},
 		{aliases: []string{"exit", "quit", "q"}, cmdFn: exitCommand, helpMsg: "Exit the debugger."},
-		{aliases: []string{"list", "ls"}, allowedPrefixes: scopePrefix, cmdFn: listCommand, helpMsg: `Show source code.
+		{aliases: []string{"list", "ls"}, allowedPrefixes: windowPrefix | scopePrefix, cmdFn: listCommand, helpMsg: `Show source code.
 
 	[goroutine <n>] [frame <m>] list [<linespec>]
 
 Show source around current point or provided linespec.`},
-		{aliases: []string{"stack", "bt"}, allowedPrefixes: scopePrefix | onPrefix, cmdFn: stackCommand, helpMsg: `Print stack trace.
+		{aliases: []string{"stack", "bt"}, allowedPrefixes: windowPrefix | scopePrefix | onPrefix, cmdFn: stackCommand, helpMsg: `Print stack trace.
 
 	[goroutine <n>] [frame <m>] stack [<depth>] [-full]
 
@@ -194,7 +195,7 @@ If -full is specified every stackframe will be decorated by the value of its loc
 		{aliases: []string{"source"}, cmdFn: c.sourceCommand, helpMsg: `Executes a file containing a list of delve commands
 
 	source <path>`},
-		{aliases: []string{"disassemble", "disass"}, allowedPrefixes: scopePrefix, cmdFn: disassCommand, helpMsg: `Disassembler.
+		{aliases: []string{"disassemble", "disass"}, allowedPrefixes: windowPrefix | scopePrefix, cmdFn: disassCommand, helpMsg: `Disassembler.
 
 	[goroutine <n>] [frame <m>] disassemble [-a <start> <end>] [-l <locspec>]
 
@@ -217,6 +218,12 @@ Specifies that the breakpoint or tracepoint should break only if the boolean exp
 	bpedit
 
 Environment variable $EDITOR must be set.`},
+
+		{aliases: []string{"window", "w"}, allowedPrefixes: scopePrefix, cmdFn: c.windowCommand, helpMsg: `Shows the output of a command on a separate window
+
+	[goroutine <n>] [frame <m>] window <command>
+
+Supported commands: threads, goroutines, breakpoints, args, locals, vars, regs, list, stack, disassemble, print`},
 	}
 
 	sort.Sort(ByFirstAlias(c.cmds))
@@ -330,6 +337,10 @@ func (a byThreadID) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a byThreadID) Less(i, j int) bool { return a[i].ID < a[j].ID }
 
 func threads(t *Term, ctx callContext, args string) error {
+	if ctx.Prefix&windowPrefix != 0 {
+		createWindowForCall(threads, t, ctx, args)
+		return nil
+	}
 	threads, err := t.client.ListThreads()
 	if err != nil {
 		return err
@@ -345,11 +356,11 @@ func threads(t *Term, ctx callContext, args string) error {
 			prefix = "* "
 		}
 		if th.Function != nil {
-			fmt.Printf("%sThread %d at %#v %s:%d %s\n",
+			fmt.Fprintf(t.stdout, "%sThread %d at %#v %s:%d %s\n",
 				prefix, th.ID, th.PC, ShortenFilePath(th.File),
 				th.Line, th.Function.Name)
 		} else {
-			fmt.Printf("%sThread %s\n", prefix, formatThread(th))
+			fmt.Fprintf(t.stdout, "%sThread %s\n", prefix, formatThread(th))
 		}
 	}
 	return nil
@@ -381,6 +392,7 @@ func thread(t *Term, ctx callContext, args string) error {
 		newThread = strconv.Itoa(newState.CurrentThread.ID)
 	}
 	fmt.Printf("Switched from %s to %s\n", oldThread, newThread)
+	updateWindows()
 	return nil
 }
 
@@ -391,6 +403,10 @@ func (a byGoroutineID) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a byGoroutineID) Less(i, j int) bool { return a[i].ID < a[j].ID }
 
 func goroutines(t *Term, ctx callContext, argstr string) error {
+	if ctx.Prefix&windowPrefix != 0 {
+		createWindowForCall(goroutines, t, ctx, argstr)
+		return nil
+	}
 	args := strings.Split(argstr, " ")
 	var fgl = fglUserCurrent
 
@@ -422,13 +438,13 @@ func goroutines(t *Term, ctx callContext, argstr string) error {
 		return err
 	}
 	sort.Sort(byGoroutineID(gs))
-	fmt.Printf("[%d goroutines]\n", len(gs))
+	fmt.Fprintf(t.stdout, "[%d goroutines]\n", len(gs))
 	for _, g := range gs {
 		prefix := "  "
 		if state.SelectedGoroutine != nil && g.ID == state.SelectedGoroutine.ID {
 			prefix = "* "
 		}
-		fmt.Printf("%sGoroutine %s\n", prefix, formatGoroutine(g, fgl))
+		fmt.Fprintf(t.stdout, "%sGoroutine %s\n", prefix, formatGoroutine(g, fgl))
 	}
 	return nil
 }
@@ -467,6 +483,7 @@ func (c *Commands) goroutine(t *Term, ctx callContext, argstr string) error {
 		}
 
 		fmt.Printf("Switched from %d to %d (thread %d)\n", oldState.SelectedGoroutine.ID, gid, newState.CurrentThread.ID)
+		updateWindows()
 		return nil
 	case 2:
 		args = append(args, "")
@@ -573,6 +590,7 @@ func restart(t *Term, ctx callContext, args string) error {
 		return err
 	}
 	fmt.Println("Process restarted with PID", t.client.ProcessPid())
+	updateWindows()
 	return nil
 }
 
@@ -586,10 +604,12 @@ func cont(t *Term, ctx callContext, args string) error {
 		printcontext(t, state)
 	}
 	printfile(t, state.CurrentThread.File, state.CurrentThread.Line, true)
+	updateWindows()
 	return nil
 }
 
 func continueUntilCompleteNext(t *Term, state *api.DebuggerState, op string) error {
+	defer updateWindows()
 	if !state.NextInProgress {
 		printfile(t, state.CurrentThread.File, state.CurrentThread.Line, true)
 		return nil
@@ -649,6 +669,7 @@ func stepInstruction(t *Term, ctx callContext, args string) error {
 	}
 	printcontext(t, state)
 	printfile(t, state.CurrentThread.File, state.CurrentThread.Line, true)
+	updateWindows()
 	return nil
 }
 
@@ -691,6 +712,7 @@ func clear(t *Term, ctx callContext, args string) error {
 		return err
 	}
 	fmt.Printf("%s cleared at %s\n", formatBreakpointName(bp, true), formatBreakpointLocation(bp))
+	updateWindows()
 	return nil
 }
 
@@ -729,6 +751,7 @@ func clearAll(t *Term, ctx callContext, args string) error {
 		}
 		fmt.Printf("%s cleared at %s\n", formatBreakpointName(bp, true), formatBreakpointLocation(bp))
 	}
+	updateWindows()
 	return nil
 }
 
@@ -740,13 +763,17 @@ func (a ByID) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a ByID) Less(i, j int) bool { return a[i].ID < a[j].ID }
 
 func breakpoints(t *Term, ctx callContext, args string) error {
+	if ctx.Prefix&windowPrefix != 0 {
+		createWindowForCall(breakpoints, t, ctx, args)
+		return nil
+	}
 	breakPoints, err := t.client.ListBreakpoints()
 	if err != nil {
 		return err
 	}
 	sort.Sort(ByID(breakPoints))
 	for _, bp := range breakPoints {
-		fmt.Printf("%s at %v (%d)\n", formatBreakpointName(bp, true), formatBreakpointLocation(bp), bp.TotalHitCount)
+		fmt.Fprintf(t.stdout, "%s at %v (%d)\n", formatBreakpointName(bp, true), formatBreakpointLocation(bp), bp.TotalHitCount)
 
 		var attrs []string
 		if bp.Cond != "" {
@@ -776,7 +803,7 @@ func breakpoints(t *Term, ctx callContext, args string) error {
 			attrs = append(attrs, fmt.Sprintf("\tprint %s", bp.Variables[i]))
 		}
 		if len(attrs) > 0 {
-			fmt.Printf("%s\n", strings.Join(attrs, "\n"))
+			fmt.Fprintf(t.stdout, "%s\n", strings.Join(attrs, "\n"))
 		}
 	}
 	return nil
@@ -825,6 +852,7 @@ func setBreakpoint(t *Term, tracepoint bool, argstr string) error {
 
 		fmt.Printf("%s set at %s\n", formatBreakpointName(bp, true), formatBreakpointLocation(bp))
 	}
+	updateWindows()
 	return nil
 }
 
@@ -839,6 +867,10 @@ func tracepoint(t *Term, ctx callContext, args string) error {
 func printVar(t *Term, ctx callContext, args string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("not enough arguments")
+	}
+	if ctx.Prefix&windowPrefix != 0 {
+		addToPrintWindow(t.client, ctx.Scope, args)
+		return nil
 	}
 	if ctx.Prefix == onPrefix {
 		ctx.Breakpoint.Variables = append(ctx.Breakpoint.Variables, args)
@@ -867,10 +899,12 @@ func setVar(t *Term, ctx callContext, args string) error {
 
 	lexpr := args[:el[0].Pos.Offset]
 	rexpr := args[el[0].Pos.Offset+1:]
-	return t.client.SetVariable(ctx.Scope, lexpr, rexpr)
+	err = t.client.SetVariable(ctx.Scope, lexpr, rexpr)
+	updateWindows()
+	return err
 }
 
-func printFilteredVariables(varType string, vars []api.Variable, filter string, cfg api.LoadConfig) error {
+func printFilteredVariables(w io.Writer, varType string, vars []api.Variable, filter string, cfg api.LoadConfig) error {
 	reg, err := regexp.Compile(filter)
 	if err != nil {
 		return err
@@ -880,14 +914,14 @@ func printFilteredVariables(varType string, vars []api.Variable, filter string, 
 		if reg == nil || reg.Match([]byte(v.Name)) {
 			match = true
 			if cfg == ShortLoadConfig {
-				fmt.Printf("%s = %s\n", v.Name, v.SinglelineString())
+				fmt.Fprintf(w, "%s = %s\n", v.Name, v.SinglelineString())
 			} else {
-				fmt.Printf("%s = %s\n", v.Name, v.MultilineString(""))
+				fmt.Fprintf(w, "%s = %s\n", v.Name, v.MultilineString(""))
 			}
 		}
 	}
 	if !match {
-		fmt.Printf("(no %s)\n", varType)
+		fmt.Fprintf(w, "(no %s)\n", varType)
 	}
 	return nil
 }
@@ -926,8 +960,12 @@ func parseVarArguments(args string) (filter string, cfg api.LoadConfig) {
 	return args, ShortLoadConfig
 }
 
-func args(t *Term, ctx callContext, args string) error {
-	filter, cfg := parseVarArguments(args)
+func args(t *Term, ctx callContext, argstr string) error {
+	if ctx.Prefix&windowPrefix != 0 {
+		createWindowForCall(args, t, ctx, argstr)
+		return nil
+	}
+	filter, cfg := parseVarArguments(argstr)
 	if ctx.Prefix == onPrefix {
 		if filter != "" {
 			return fmt.Errorf("filter not supported on breakpoint")
@@ -939,10 +977,14 @@ func args(t *Term, ctx callContext, args string) error {
 	if err != nil {
 		return err
 	}
-	return printFilteredVariables("args", vars, filter, cfg)
+	return printFilteredVariables(t.stdout, "args", vars, filter, cfg)
 }
 
 func locals(t *Term, ctx callContext, args string) error {
+	if ctx.Prefix&windowPrefix != 0 {
+		createWindowForCall(locals, t, ctx, args)
+		return nil
+	}
 	filter, cfg := parseVarArguments(args)
 	if ctx.Prefix == onPrefix {
 		if filter != "" {
@@ -955,19 +997,27 @@ func locals(t *Term, ctx callContext, args string) error {
 	if err != nil {
 		return err
 	}
-	return printFilteredVariables("locals", locals, filter, cfg)
+	return printFilteredVariables(t.stdout, "locals", locals, filter, cfg)
 }
 
 func vars(t *Term, ctx callContext, args string) error {
+	if ctx.Prefix&windowPrefix != 0 {
+		createWindowForCall(vars, t, ctx, args)
+		return nil
+	}
 	filter, cfg := parseVarArguments(args)
 	vars, err := t.client.ListPackageVariables(filter, cfg)
 	if err != nil {
 		return err
 	}
-	return printFilteredVariables("vars", vars, filter, cfg)
+	return printFilteredVariables(t.stdout, "vars", vars, filter, cfg)
 }
 
 func regs(t *Term, ctx callContext, args string) error {
+	if ctx.Prefix&windowPrefix != 0 {
+		createWindowForCall(regs, t, ctx, args)
+		return nil
+	}
 	regs, err := t.client.ListRegisters()
 	if err != nil {
 		return err
@@ -977,6 +1027,10 @@ func regs(t *Term, ctx callContext, args string) error {
 }
 
 func stackCommand(t *Term, ctx callContext, args string) error {
+	if ctx.Prefix&windowPrefix != 0 {
+		createWindowForCall(stackCommand, t, ctx, args)
+		return nil
+	}
 	depth, full, err := parseStackArgs(args)
 	if err != nil {
 		return err
@@ -993,7 +1047,7 @@ func stackCommand(t *Term, ctx callContext, args string) error {
 	if err != nil {
 		return err
 	}
-	printStack(stack, "")
+	printStack(t.stdout, stack, "")
 	return nil
 }
 
@@ -1020,37 +1074,49 @@ func parseStackArgs(argstr string) (int, bool, error) {
 }
 
 func listCommand(t *Term, ctx callContext, args string) error {
+	if ctx.Prefix&windowPrefix != 0 {
+		createListWindow(t.client, ctx, args)
+		return nil
+	}
+	file, line, state, showArrow, err := listCommandToLocation(t.client, ctx, args)
+	if err != nil {
+		return nil
+	}
+	if state != nil {
+		printcontext(t, state)
+	}
+	return printfile(t, file, line, showArrow)
+}
+
+func listCommandToLocation(client service.Client, ctx callContext, args string) (file string, line int, state *api.DebuggerState, showArrow bool, err error) {
 	if ctx.Prefix == scopePrefix {
-		locs, err := t.client.Stacktrace(ctx.Scope.GoroutineID, ctx.Scope.Frame, nil)
+		locs, err := client.Stacktrace(ctx.Scope.GoroutineID, ctx.Scope.Frame, nil)
 		if err != nil {
-			return err
+			return "", 0, nil, false, err
 		}
 		if ctx.Scope.Frame >= len(locs) {
-			return fmt.Errorf("Frame %d does not exist in goroutine %d", ctx.Scope.Frame, ctx.Scope.GoroutineID)
+			return "", 0, nil, false, fmt.Errorf("Frame %d does not exist in goroutine %d", ctx.Scope.Frame, ctx.Scope.GoroutineID)
 		}
 		loc := locs[ctx.Scope.Frame]
-		return printfile(t, loc.File, loc.Line, true)
+		return loc.File, loc.Line, nil, true, nil
 	}
 
 	if len(args) == 0 {
-		state, err := t.client.GetState()
+		state, err := client.GetState()
 		if err != nil {
-			return err
+			return "", 0, nil, false, err
 		}
-		printcontext(t, state)
-		printfile(t, state.CurrentThread.File, state.CurrentThread.Line, true)
-		return nil
+		return state.CurrentThread.File, state.CurrentThread.Line, state, true, nil
 	}
 
-	locs, err := t.client.FindLocation(api.EvalScope{GoroutineID: -1, Frame: 0}, args)
+	locs, err := client.FindLocation(api.EvalScope{GoroutineID: -1, Frame: 0}, args)
 	if err != nil {
-		return err
+		return "", 0, nil, false, err
 	}
 	if len(locs) > 1 {
-		return debugger.AmbiguousLocationError{Location: args, CandidatesLocation: locs}
+		return "", 0, nil, false, debugger.AmbiguousLocationError{Location: args, CandidatesLocation: locs}
 	}
-	printfile(t, locs[0].File, locs[0].Line, false)
-	return nil
+	return locs[0].File, locs[0].Line, nil, false, nil
 }
 
 func (c *Commands) sourceCommand(t *Term, ctx callContext, args string) error {
@@ -1063,60 +1129,64 @@ func (c *Commands) sourceCommand(t *Term, ctx callContext, args string) error {
 
 var disasmUsageError = errors.New("wrong number of arguments: disassemble [-a <start> <end>] [-l <locspec>]")
 
-func disassCommand(t *Term, ctx callContext, args string) error {
+func disassCommandToInstr(client service.Client, scope api.EvalScope, args string) (api.AsmInstructions, error) {
 	var cmd, rest string
 
 	if args != "" {
 		argv := strings.SplitN(args, " ", 2)
 		if len(argv) != 2 {
-			return disasmUsageError
+			return nil, disasmUsageError
 		}
 		cmd = argv[0]
 		rest = argv[1]
 	}
 
-	var disasm api.AsmInstructions
-	var disasmErr error
-
 	switch cmd {
 	case "":
-		locs, err := t.client.FindLocation(ctx.Scope, "+0")
+		locs, err := client.FindLocation(scope, "+0")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		disasm, disasmErr = t.client.DisassemblePC(ctx.Scope, locs[0].PC, api.IntelFlavour)
+		return client.DisassemblePC(scope, locs[0].PC, api.IntelFlavour)
 	case "-a":
 		v := strings.SplitN(rest, " ", 2)
 		if len(v) != 2 {
-			return disasmUsageError
+			return nil, disasmUsageError
 		}
 		startpc, err := strconv.ParseInt(v[0], 0, 64)
 		if err != nil {
-			return fmt.Errorf("wrong argument: %s is not a number", v[0])
+			return nil, fmt.Errorf("wrong argument: %s is not a number", v[0])
 		}
 		endpc, err := strconv.ParseInt(v[1], 0, 64)
 		if err != nil {
-			return fmt.Errorf("wrong argument: %s is not a number", v[1])
+			return nil, fmt.Errorf("wrong argument: %s is not a number", v[1])
 		}
-		disasm, disasmErr = t.client.DisassembleRange(ctx.Scope, uint64(startpc), uint64(endpc), api.IntelFlavour)
+		return client.DisassembleRange(scope, uint64(startpc), uint64(endpc), api.IntelFlavour)
 	case "-l":
-		locs, err := t.client.FindLocation(ctx.Scope, rest)
+		locs, err := client.FindLocation(scope, rest)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if len(locs) != 1 {
-			return errors.New("expression specifies multiple locations")
+			return nil, errors.New("expression specifies multiple locations")
 		}
-		disasm, disasmErr = t.client.DisassemblePC(ctx.Scope, locs[0].PC, api.IntelFlavour)
+		return client.DisassemblePC(scope, locs[0].PC, api.IntelFlavour)
 	default:
-		return disasmUsageError
+		return nil, disasmUsageError
+	}
+}
+
+func disassCommand(t *Term, ctx callContext, args string) error {
+	if ctx.Prefix&windowPrefix != 0 {
+		createDisassWindow(t.client, ctx.Scope, args)
+		return nil
 	}
 
-	if disasmErr != nil {
-		return disasmErr
+	disasm, err := disassCommandToInstr(t.client, ctx.Scope, args)
+	if err != nil {
+		return err
 	}
 
-	fmt.Printf("printing\n")
 	DisasmPrint(disasm, os.Stdout)
 
 	return nil
@@ -1129,7 +1199,7 @@ func digits(n int) int {
 	return int(math.Floor(math.Log10(float64(n)))) + 1
 }
 
-func printStack(stack []api.Stackframe, ind string) {
+func printStack(out io.Writer, stack []api.Stackframe, ind string) {
 	if len(stack) == 0 {
 		return
 	}
@@ -1142,14 +1212,14 @@ func printStack(stack []api.Stackframe, ind string) {
 		if stack[i].Function != nil {
 			name = stack[i].Function.Name
 		}
-		fmt.Printf(fmtstr, ind, i, stack[i].PC, name)
-		fmt.Printf("%sat %s:%d\n", s, ShortenFilePath(stack[i].File), stack[i].Line)
+		fmt.Fprintf(out, fmtstr, ind, i, stack[i].PC, name)
+		fmt.Fprintf(out, "%sat %s:%d\n", s, ShortenFilePath(stack[i].File), stack[i].Line)
 
 		for j := range stack[i].Arguments {
-			fmt.Printf("%s    %s = %s\n", s, stack[i].Arguments[j].Name, stack[i].Arguments[j].SinglelineString())
+			fmt.Fprintf(out, "%s    %s = %s\n", s, stack[i].Arguments[j].Name, stack[i].Arguments[j].SinglelineString())
 		}
 		for j := range stack[i].Locals {
-			fmt.Printf("%s    %s = %s\n", s, stack[i].Locals[j].Name, stack[i].Locals[j].SinglelineString())
+			fmt.Fprintf(out, "%s    %s = %s\n", s, stack[i].Locals[j].Name, stack[i].Locals[j].SinglelineString())
 		}
 	}
 }
@@ -1251,7 +1321,7 @@ func printcontextThread(t *Term, th *api.Thread) {
 
 		if bpi.Stacktrace != nil {
 			fmt.Printf("\tStack:\n")
-			printStack(bpi.Stacktrace, "\t\t")
+			printStack(os.Stdout, bpi.Stacktrace, "\t\t")
 		}
 	}
 }
@@ -1338,7 +1408,9 @@ func (c *Commands) onCmd(t *Term, ctx callContext, argstr string) error {
 	if err != nil {
 		return err
 	}
-	return t.client.AmendBreakpoint(ctx.Breakpoint)
+	err = t.client.AmendBreakpoint(ctx.Breakpoint)
+	updateWindows()
+	return err
 }
 
 func conditionCmd(t *Term, ctx callContext, argstr string) error {
@@ -1354,7 +1426,9 @@ func conditionCmd(t *Term, ctx callContext, argstr string) error {
 	}
 	bp.Cond = args[1]
 
-	return t.client.AmendBreakpoint(bp)
+	err = t.client.AmendBreakpoint(bp)
+	updateWindows()
+	return err
 }
 
 func bpEdit(t *Term, ctx callContext, argstr string) error {
@@ -1395,6 +1469,7 @@ func bpEdit(t *Term, ctx callContext, argstr string) error {
 
 	updateBreakpoints(t.client)
 	saveBreakpoints()
+	updateWindows()
 	return nil
 }
 

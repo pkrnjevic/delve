@@ -17,7 +17,8 @@ const (
 
 // Config defines all configuration options available to be set through the config file.
 type Config struct {
-	Aliases map[string][]string
+	Aliases  map[string][]string
+	FontSize int
 }
 
 // LoadConfig attempts to populate a Config object from the config.yml file.

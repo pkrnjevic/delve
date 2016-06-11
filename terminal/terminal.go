@@ -39,6 +39,13 @@ func New(client service.Client, conf *config.Config) *Term {
 		cmds.Merge(conf.Aliases)
 	}
 
+	if conf != nil {
+		fontSize = conf.FontSize
+	}
+	if fontSize <= 0 {
+		fontSize = 18
+	}
+
 	var w io.Writer
 
 	dumb := strings.ToLower(os.Getenv("TERM")) == "dumb"
