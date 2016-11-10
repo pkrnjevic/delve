@@ -17,6 +17,7 @@ type WaitStatus sys.WaitStatus
 type OSSpecificDetails struct {
 	threadAct C.thread_act_t
 	registers C.x86_thread_state64_t
+	exists    bool
 }
 
 // ErrContinueThread is the error returned when a thread could not
